@@ -8,7 +8,7 @@ import { ResultsGrid } from './components/ResultsGrid';
 import { useHistory } from './hooks/use-history';
 import { useModels } from './hooks/use-models';
 import { useRunModels } from './hooks/use-run-models';
-import { buildHistoryEntry, type HistoryEntry, type HistoryModel } from './lib/history-storage';
+import { buildHistoryEntry, modelLabels, type HistoryEntry, type HistoryModel } from './lib/history-storage';
 
 export function App() {
   const [prompt, setPrompt] = useState('');
@@ -35,8 +35,6 @@ export function App() {
     run.reset();
     textareaRef.current?.focus();
   }
-
-  const labels = new Map((models.data ?? []).map((m) => [m.id, m.label]));
 
   return (
     <main>
@@ -91,7 +89,7 @@ export function App() {
         models.data &&
         (run.isPending || run.data) && (
           <ResultsGrid
-            models={run.variables.modelIds.map((id) => ({ id, label: labels.get(id) ?? id }))}
+            models={modelLabels(run.variables.modelIds, models.data)}
             results={run.data}
           />
         )
@@ -103,6 +101,8 @@ export function App() {
         disabled={run.isPending}
         currentId={restored?.id}
         onRestore={handleRestore}
+        onDelete={history.remove}
+        onClear={history.clear}
       />
     </main>
   );

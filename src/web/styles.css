@@ -314,6 +314,21 @@ button:disabled {
   text-align: left;
 }
 
+.history-delete {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.history-confirm {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
 .history-row-current {
   background: var(--surface);
 }
@@ -361,6 +376,10 @@ button:disabled {
 
   .run-button {
     width: 100%;
+  }
+
+  .history-head {
+    flex-wrap: wrap;
   }
 
   .history-row {

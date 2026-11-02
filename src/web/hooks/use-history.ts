@@ -1,5 +1,13 @@
-import { useState } from 'react';
-import { readHistory, saveEntry, type HistoryEntry, type HistoryRead } from '../lib/history-storage';
+import { useEffect, useState } from 'react';
+import {
+  HISTORY_KEY,
+  clearHistory,
+  deleteEntry,
+  readHistory,
+  saveEntry,
+  type HistoryEntry,
+  type HistoryRead,
+} from '../lib/history-storage';
 
 export function useHistory() {
   const [history, setHistory] = useState<HistoryRead>(() => readHistory());
@@ -16,9 +24,25 @@ export function useHistory() {
     setSaveFailed(outcome === 'not-saved');
   }
 
+  function remove(id: string) {
+    setHistory(deleteEntry(id) === 'unavailable' ? { status: 'unavailable' } : readHistory());
+  }
+
+  function clear() {
+    setHistory(clearHistory() === 'unavailable' ? { status: 'unavailable' } : readHistory());
+  }
+
+  useEffect(() => {
+    function onStorage(event: StorageEvent) {
+      if (event.key === HISTORY_KEY || event.key === null) setHistory(readHistory());
+    }
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   function resetSaveFailed() {
     setSaveFailed(false);
   }
 
-  return { history, saveFailed, record, resetSaveFailed };
+  return { history, saveFailed, record, remove, clear, resetSaveFailed };
 }

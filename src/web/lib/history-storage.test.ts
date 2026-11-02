@@ -6,6 +6,7 @@ import {
   buildHistoryEntry,
   clearHistory,
   deleteEntry,
+  modelLabels,
   readHistory,
   saveEntry,
 } from './history-storage';
@@ -255,5 +256,21 @@ describe('buildHistoryEntry', () => {
   it('makes an entry that passes HistoryEntry', () => {
     const built = buildHistoryEntry({ request, results, models });
     expect(HistoryEntry.safeParse(built).success).toBe(true);
+  });
+});
+
+describe('modelLabels', () => {
+  const live = [
+    { id: 'a/one', label: 'A: One', inputUsdPerMTok: 1, outputUsdPerMTok: 1 },
+    { id: 'a/blank', label: '', inputUsdPerMTok: 1, outputUsdPerMTok: 1 },
+  ];
+
+  it('uses the live label, and the ID when the model is missing, the label is empty or the list is absent', () => {
+    expect(modelLabels(['a/one', 'a/blank', 'a/gone'], live)).toEqual([
+      { id: 'a/one', label: 'A: One' },
+      { id: 'a/blank', label: 'a/blank' },
+      { id: 'a/gone', label: 'a/gone' },
+    ]);
+    expect(modelLabels(['a/one'], undefined)).toEqual([{ id: 'a/one', label: 'a/one' }]);
   });
 });

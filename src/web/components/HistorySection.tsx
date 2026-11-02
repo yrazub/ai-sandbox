@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { HistoryEntry, HistoryRead } from '../lib/history-storage';
 import { failedCount, formatModelLabels, formatRunTime, promptExcerpt, totalCost } from './history-format';
 import { formatCost } from './result-format';
@@ -8,15 +9,41 @@ interface Props {
   disabled: boolean;
   currentId: string | undefined;
   onRestore: (entry: HistoryEntry) => void;
+  onDelete: (id: string) => void;
+  onClear: () => void;
 }
 
-export function HistorySection({ history, saveFailed, disabled, currentId, onRestore }: Props) {
+export function HistorySection({ history, saveFailed, disabled, currentId, onRestore, onDelete, onClear }: Props) {
+  const [confirming, setConfirming] = useState(false);
   const entries = history.status === 'available' ? history.entries : [];
 
   return (
     <section className="history" aria-labelledby="history-heading">
       <div className="history-head">
         <h2 id="history-heading">History ({entries.length})</h2>
+        {entries.length > 0 &&
+          (confirming ? (
+            <span className="history-confirm">
+              <span>Delete all {entries.length} runs?</span>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  onClear();
+                  setConfirming(false);
+                }}
+              >
+                Clear
+              </button>
+              <button type="button" onClick={() => setConfirming(false)}>
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button type="button" disabled={disabled} onClick={() => setConfirming(true)}>
+              Clear history
+            </button>
+          ))}
       </div>
 
       {saveFailed && (
@@ -55,6 +82,15 @@ export function HistorySection({ history, saveFailed, disabled, currentId, onRes
                     {failed > 0 && <span className="history-failed">{failed} failed</span>}
                     {formatCost(totalCost(entry.results))}
                   </span>
+                </button>
+                <button
+                  type="button"
+                  className="history-delete"
+                  aria-label={`Delete run: ${promptExcerpt(entry.prompt)}`}
+                  disabled={disabled}
+                  onClick={() => onDelete(entry.id)}
+                >
+                  ×
                 </button>
               </li>
             );

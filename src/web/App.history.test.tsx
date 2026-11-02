@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -495,5 +495,128 @@ describe('restoring a run', () => {
     expect(await screen.findByText('Run failed: bad')).toBeInTheDocument();
     await user.click(restoreBtn());
     expect(screen.queryByText(/Run failed/)).not.toBeInTheDocument();
+  });
+});
+
+describe('deleting and clearing', () => {
+  const three = () => [entry(1), entry(2), entry(3)];
+  const clearBtn = () => screen.getByRole('button', { name: 'Clear history' });
+  const deleteBtn = (n: number) => screen.getByRole('button', { name: `Delete run: prompt ${n}` });
+
+  async function load(entries: HistoryEntry[] = three()) {
+    seed(...entries);
+    const fetchFn = stubFetch();
+    const user = renderApp();
+    await screen.findByLabelText('Search');
+    return { user, fetchFn };
+  }
+
+  it('asks before clearing and deletes nothing yet (AC-18)', async () => {
+    const { user } = await load();
+    await user.click(clearBtn());
+    expect(screen.getByText('Delete all 3 runs?')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    expect(stored()).toHaveLength(3);
+  });
+
+  it('keeps the text "Delete all 1 runs?" for one entry (Q8)', async () => {
+    const { user } = await load([entry(1)]);
+    await user.click(clearBtn());
+    expect(screen.getByText('Delete all 1 runs?')).toBeInTheDocument();
+  });
+
+  it('clears the key, and a fresh render shows the empty state (AC-19)', async () => {
+    const { user } = await load();
+    await user.click(clearBtn());
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(stored()).toEqual([]);
+    cleanup();
+    stubFetch();
+    renderApp();
+    expect(screen.getByText('No runs yet')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear history' })).not.toBeInTheDocument();
+  });
+
+  it('keeps everything on Cancel (AC-20)', async () => {
+    const { user } = await load();
+    await user.click(clearBtn());
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getAllByRole('button', { name: /^Restore:/ })).toHaveLength(3);
+    expect(stored()).toHaveLength(3);
+    expect(clearBtn()).toBeInTheDocument();
+  });
+
+  it('keeps the restored cards when clearing (AC-21)', async () => {
+    const { user } = await load();
+    await user.click(screen.getByRole('button', { name: 'Restore: prompt 2' }));
+    await user.click(clearBtn());
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(screen.getByText(/^From history/)).toBeInTheDocument();
+    expect(screen.getByText('answer from a/m5')).toBeInTheDocument();
+  });
+
+  it('keeps the cards and line when the shown entry is deleted (Q2)', async () => {
+    const { user } = await load();
+    await user.click(screen.getByRole('button', { name: 'Restore: prompt 2' }));
+    await user.click(deleteBtn(2));
+    expect(screen.queryByRole('button', { name: 'Restore: prompt 2' })).not.toBeInTheDocument();
+    expect(screen.getByText(/^From history/)).toBeInTheDocument();
+    expect(screen.getByText('answer from a/m5')).toBeInTheDocument();
+  });
+
+  it('sends no request on delete or clear (AC-13)', async () => {
+    const { user, fetchFn } = await load();
+    const before = fetchFn.mock.calls.length;
+    await user.click(deleteBtn(1));
+    await user.click(clearBtn());
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(fetchFn.mock.calls.length).toBe(before);
+  });
+
+  it('disables delete, clear and confirm Clear while a run is pending, not Cancel (AC-17)', async () => {
+    seed(...three());
+    stubFetch({ run: () => new Promise<Response>(() => {}) });
+    const user = renderApp();
+    await runOnce(user);
+    await screen.findAllByText('Waiting for the answer…');
+    for (const n of [1, 2, 3]) expect(deleteBtn(n)).toBeDisabled();
+    expect(clearBtn()).toBeDisabled();
+  });
+
+  it('keeps Cancel enabled and Clear disabled in a pending confirmation (AC-17)', async () => {
+    seed(...three());
+    stubFetch({ run: () => new Promise<Response>(() => {}) });
+    const user = renderApp();
+    await pick(user, 'A: Five');
+    await user.type(screen.getByLabelText('Prompt'), 'Hello');
+    await user.click(clearBtn());
+    await user.click(runButton());
+    await screen.findAllByText('Waiting for the answer…');
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  });
+
+  it('deletes one row without confirmation (AC-39)', async () => {
+    const { user } = await load();
+    await user.click(deleteBtn(2));
+    expect(screen.queryByText(/^Delete all/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Restore: prompt 2' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^Restore:/ })).toHaveLength(2);
+    expect(stored().map((e) => e.id)).toEqual(['id-3', 'id-1']);
+  });
+
+  it('re-reads on a storage event for the key or null (AC-38)', async () => {
+    await load([entry(1)]);
+    seed(entry(1), entry(9, { prompt: 'from another tab' }));
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: HISTORY_KEY }));
+    });
+    expect(screen.getByRole('button', { name: 'Restore: from another tab' })).toBeInTheDocument();
+    localStorage.clear();
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: null }));
+    });
+    expect(screen.getByText('No runs yet')).toBeInTheDocument();
   });
 });

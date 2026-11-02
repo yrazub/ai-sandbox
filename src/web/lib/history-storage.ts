@@ -128,6 +128,14 @@ export function clearHistory(getStorage: GetStorage = browserStorage): 'saved' |
   }
 }
 
+/** Pairs each model ID with its live label, or the ID itself when the list lacks it or its label is empty. */
+export function modelLabels(modelIds: string[], models: ModelInfo[] | undefined): HistoryModel[] {
+  return modelIds.map((id) => {
+    const label = models?.find((m) => m.id === id)?.label;
+    return { id, label: label ? label : id };
+  });
+}
+
 export function buildHistoryEntry(input: {
   request: RunRequest;
   results: RunResult[];
@@ -140,10 +148,7 @@ export function buildHistoryEntry(input: {
     id: input.id ?? crypto.randomUUID(),
     createdAt: input.createdAt ?? new Date().toISOString(),
     prompt: request.prompt,
-    models: request.modelIds.map((modelId) => {
-      const label = models?.find((m) => m.id === modelId)?.label;
-      return { id: modelId, label: label ? label : modelId };
-    }),
+    models: modelLabels(request.modelIds, models),
     results,
   };
 }

@@ -248,6 +248,72 @@ button:disabled {
   font-size: 0.875rem;
 }
 
+.history {
+  margin-top: 1.5rem;
+}
+
+.history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.history-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.history-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+}
+
+.history-row:hover {
+  background: var(--surface);
+}
+
+.history-time {
+  color: var(--muted);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.history-excerpt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-meta {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.history-failed {
+  color: var(--danger);
+}
+
+.history-notice {
+  margin: 0.5rem 0;
+}
+
 @media (max-width: 40rem) {
   main {
     padding: 0.75rem;
@@ -259,5 +325,9 @@ button:disabled {
 
   .run-button {
     width: 100%;
+  }
+
+  .history-row {
+    flex-wrap: wrap;
   }
 }

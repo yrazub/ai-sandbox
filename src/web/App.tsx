@@ -1,15 +1,22 @@
 import { useState } from 'react';
 import { ModelPicker } from './components/ModelPicker';
 import { PromptForm } from './components/PromptForm';
+import { HistorySection } from './components/HistorySection';
 import { ResultsGrid } from './components/ResultsGrid';
+import { useHistory } from './hooks/use-history';
 import { useModels } from './hooks/use-models';
 import { useRunModels } from './hooks/use-run-models';
+import { buildHistoryEntry } from './lib/history-storage';
 
 export function App() {
   const [prompt, setPrompt] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const models = useModels();
-  const run = useRunModels();
+  const history = useHistory();
+  const run = useRunModels({
+    onSuccess: (results, request) =>
+      history.record(buildHistoryEntry({ request, results, models: models.data })),
+  });
 
   const canRun = prompt.trim().length > 0 && selectedIds.length > 0 && !run.isPending;
 
@@ -22,7 +29,10 @@ export function App() {
         onPromptChange={setPrompt}
         canRun={canRun}
         running={run.isPending}
-        onRun={() => run.mutate({ prompt, modelIds: selectedIds })}
+        onRun={() => {
+          history.resetSaveFailed();
+          run.mutate({ prompt, modelIds: selectedIds });
+        }}
       >
         <ModelPicker
           models={models.data}
@@ -44,6 +54,8 @@ export function App() {
       {run.variables && models.data && (run.isPending || run.data) && (
         <ResultsGrid modelIds={run.variables.modelIds} models={models.data} results={run.data} />
       )}
+
+      <HistorySection history={history.history} saveFailed={history.saveFailed} />
     </main>
   );
 }

@@ -1,0 +1,16 @@
+{
+  "enabledPlugins": {
+    "sdd-engineering@gen-bin": true,
+    "engineering-paved-path@gen-bin": true,
+    "research-tools@gen-bin": true,
+    "architecture-review@gen-bin": true
+  },
+  "extraKnownMarketplaces": {
+    "gen-bin": {
+      "source": {
+        "source": "github",
+        "repo": "yrazub/gen-bin"
+      }
+    }
+  }
+}

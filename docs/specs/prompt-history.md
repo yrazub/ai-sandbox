@@ -1,6 +1,6 @@
 # Spec: Prompt history
 Spec ID: SPEC-2026-11-02-prompt-history
-Status: draft (2026-11-02)
+Status: approved (2026-11-02)
 Supersedes: — (no earlier spec. This spec lifts the "History, database" exclusion of the base-app plan, for browser-side history only. See Goals / Non-goals.)
 
 ## Problem and user
@@ -57,7 +57,7 @@ clear the history. The history survives a reload. Nothing is stored on the serve
 Verify-by suites come from the Testing section of `CLAUDE.md`: `unit (web)` covers plain
 functions tested without React, `component (web)` covers jsdom tests in the style of the page's
 existing tests, and `manual` covers a check in a real browser. The project has no e2e suite.
-Priorities marked * were assumed and are listed in OQ-1.
+Priorities marked * were assumed; the assumption was accepted (OQ-1).
 
 | ID | Priority | Requirement | Story | Verify by |
 |---|---|---|---|---|
@@ -100,7 +100,7 @@ Priorities marked * were assumed and are listed in OQ-1.
 | AC-37 | P3 | WHEN a run is recorded, the page shall keep every entry that another tab of the page saved since this tab last read the history. | US-1 | unit (web) |
 | AC-38 | P3 | WHEN another tab of the page changes the history, the History section shall show the changed list without a reload. | US-2 | component (web) |
 | AC-39 | P3 | WHEN the user deletes a single entry with its delete button, the History section shall remove that entry, without confirmation, and keep every other entry. | US-4 | component (web) |
-| AC-40 | P3 | The History section shall show on each row the total cost of the run (blocked by OQ-2). | US-2 | unit (web) |
+| AC-40 | P3 | The History section shall show on each row the total cost of the run (rule settled by OQ-2). | US-2 | unit (web) |
 | AC-41 | P3* | The History section's heading shall read "History (N)", N being the number of entries. | US-2 | component (web) |
 | AC-42 | P3* | WHILE the results grid shows a restored entry, the History section shall mark that entry's row as the current one. | US-3 | component (web) |
 
@@ -130,7 +130,7 @@ Priorities marked * were assumed and are listed in OQ-1.
 | EC-20 | Cost of a free model (`$0`) versus an unknown cost (`n/a`) | Preserved through storage and shown as on a live card | AC-15 |
 | EC-21 | Page opened at `127.0.0.1:5173` instead of `localhost:5173`, or another local app served on the same origin | Different origin, so a different history. A same-origin app can read and write the stored value, which is handled as untrusted | accepted: no handling. AC-27 guards reads |
 | EC-22 | Reload with history present | History listed. The results area is empty until a run or restore | AC-5, Non-goal |
-| EC-23 | Total cost when some results have no cost or are errors | Undecided | OQ-2 |
+| EC-23 | Total cost when some results have no cost or are errors | Sum the costs of the successful results; `n/a` if any successful result has no cost or none succeeded | OQ-2 |
 
 ## Non-functional requirements
 
@@ -190,16 +190,16 @@ The server, its routes and the shared contracts do not change.
 
 ## Open questions
 
-| ID | Question | Recommended answer | Blocks |
+| ID | Question | Accepted answer (2026-11-02) | Status |
 |---|---|---|---|
-| OQ-1 | The discovery answers set no priority for a few criteria: focus after restore (AC-34), the restore announcement (AC-35), phone width (AC-36), the "History (N)" heading (AC-41) and the current-row mark (AC-42). | Keep the assumed priorities: P2 for AC-34, AC-35 and AC-36, P3 for AC-41 and AC-42. | approval |
-| OQ-2 | How is a row's total cost (P1, AC-40) worked out when some models failed or reported no cost? | Sum the cost of the successful results. Show `n/a` if any successful result has no cost or no result succeeded. Error results add nothing. Format it like a card's cost. | AC-40 |
-| OQ-3 | How long does the notice about left-out models (AC-31) stay? | Until the next restore or the next run starts. | AC-31 |
+| OQ-1 | The discovery answers set no priority for a few criteria: focus after restore (AC-34), the restore announcement (AC-35), phone width (AC-36), the "History (N)" heading (AC-41) and the current-row mark (AC-42). | Keep the assumed priorities: P2 for AC-34, AC-35 and AC-36, P3 for AC-41 and AC-42. | resolved |
+| OQ-2 | How is a row's total cost (P1, AC-40) worked out when some models failed or reported no cost? | Sum the cost of the successful results. Show `n/a` if any successful result has no cost or no result succeeded. Error results add nothing. Format it like a card's cost. | resolved |
+| OQ-3 | How long does the notice about left-out models (AC-31) stay? | Until the next restore or the next run starts. | resolved |
 
 ---
 
 # Prompt history — web module
-Spec ID: SPEC-2026-11-02-prompt-history · Umbrella: [`docs/specs/prompt-history.md`](#spec-prompt-history) (this file) · Status: draft (2026-11-02)
+Spec ID: SPEC-2026-11-02-prompt-history · Umbrella: [`docs/specs/prompt-history.md`](#spec-prompt-history) (this file) · Status: approved (2026-11-02)
 
 ## Scope
 
@@ -255,7 +255,7 @@ Storage surface: one `localStorage` key, `ai-sandbox:history:v1`, holding a JSON
 | R-WEB-26 | IF the key's value is not valid JSON or not an array, THEN the storage module shall return an empty history without throwing. | AC-28 |
 | R-WEB-27 | WHEN an entry is saved after an unparsable read, the storage module shall write a fresh array holding the new entry. | AC-29 |
 | R-WEB-28 | WHILE the model list is loaded, WHEN a row is restored, the page shall select only the stored models present in the list. | AC-30 |
-| R-WEB-29 | WHILE the model list is loaded, WHEN a restore leaves models out, the page shall render a status notice "Not available any more: <labels>". | AC-31 |
+| R-WEB-29 | WHILE the model list is loaded, WHEN a restore leaves models out, the page shall render a status notice "Not available any more: <labels>". | resolved |
 | R-WEB-30 | WHILE the model list is loading or failed, WHEN a row is restored, the page shall select every stored model ID. | AC-32 |
 | R-WEB-31 | The History section and the restored grid shall take model labels from the entry's `models`, never from the live list. | AC-33 |
 | R-WEB-32 | WHEN a row is restored, the page shall move focus to the Prompt textarea. | AC-34 |
@@ -264,7 +264,7 @@ Storage surface: one `localStorage` key, `ai-sandbox:history:v1`, holding a JSON
 | R-WEB-35 | WHEN an entry is saved, the storage module shall read the key again immediately before writing, and add the new entry to what it read. | AC-37 |
 | R-WEB-36 | WHEN the window receives a `storage` event for the key, the history hook shall read the key again and the History section shall re-render. | AC-38 |
 | R-WEB-37 | WHEN a row's delete button ("Delete run: <excerpt>") is pressed, the storage module shall remove that entry by `id` and keep the others. | AC-39 |
-| R-WEB-38 | The history row helpers shall include a plain function for the row's total cost, applying the rule settled by OQ-2. | AC-40 |
+| R-WEB-38 | The history row helpers shall include a plain function for the row's total cost, applying the rule settled by OQ-2. | resolved |
 | R-WEB-39 | The History section heading shall render "History (N)". | AC-41 |
 | R-WEB-40 | WHILE a restored entry is shown, its row shall carry `aria-current="true"` and the highlighted background. | AC-42 |
 

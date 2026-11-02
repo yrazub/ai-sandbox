@@ -1,6 +1,6 @@
 # Spec: Prompt history
 Spec ID: SPEC-2026-11-02-prompt-history
-Status: approved (2026-11-02)
+Status: done (2026-11-02)
 Supersedes: — (no earlier spec. This spec lifts the "History, database" exclusion of the base-app plan, for browser-side history only. See Goals / Non-goals.)
 
 ## Problem and user
@@ -199,7 +199,7 @@ The server, its routes and the shared contracts do not change.
 ---
 
 # Prompt history — web module
-Spec ID: SPEC-2026-11-02-prompt-history · Umbrella: [`docs/specs/prompt-history.md`](#spec-prompt-history) (this file) · Status: approved (2026-11-02)
+Spec ID: SPEC-2026-11-02-prompt-history · Umbrella: [`docs/specs/prompt-history.md`](#spec-prompt-history) (this file) · Status: done (2026-11-02)
 
 ## Scope
 
@@ -255,7 +255,7 @@ Storage surface: one `localStorage` key, `ai-sandbox:history:v1`, holding a JSON
 | R-WEB-26 | IF the key's value is not valid JSON or not an array, THEN the storage module shall return an empty history without throwing. | AC-28 |
 | R-WEB-27 | WHEN an entry is saved after an unparsable read, the storage module shall write a fresh array holding the new entry. | AC-29 |
 | R-WEB-28 | WHILE the model list is loaded, WHEN a row is restored, the page shall select only the stored models present in the list. | AC-30 |
-| R-WEB-29 | WHILE the model list is loaded, WHEN a restore leaves models out, the page shall render a status notice "Not available any more: <labels>". | resolved |
+| R-WEB-29 | WHILE the model list is loaded, WHEN a restore leaves models out, the page shall render a status notice "Not available any more: <labels>". | AC-31 |
 | R-WEB-30 | WHILE the model list is loading or failed, WHEN a row is restored, the page shall select every stored model ID. | AC-32 |
 | R-WEB-31 | The History section and the restored grid shall take model labels from the entry's `models`, never from the live list. | AC-33 |
 | R-WEB-32 | WHEN a row is restored, the page shall move focus to the Prompt textarea. | AC-34 |
@@ -264,7 +264,7 @@ Storage surface: one `localStorage` key, `ai-sandbox:history:v1`, holding a JSON
 | R-WEB-35 | WHEN an entry is saved, the storage module shall read the key again immediately before writing, and add the new entry to what it read. | AC-37 |
 | R-WEB-36 | WHEN the window receives a `storage` event for the key, the history hook shall read the key again and the History section shall re-render. | AC-38 |
 | R-WEB-37 | WHEN a row's delete button ("Delete run: <excerpt>") is pressed, the storage module shall remove that entry by `id` and keep the others. | AC-39 |
-| R-WEB-38 | The history row helpers shall include a plain function for the row's total cost, applying the rule settled by OQ-2. | resolved |
+| R-WEB-38 | The history row helpers shall include a plain function for the row's total cost, applying the rule settled by OQ-2. | AC-40 |
 | R-WEB-39 | The History section heading shall render "History (N)". | AC-41 |
 | R-WEB-40 | WHILE a restored entry is shown, its row shall carry `aria-current="true"` and the highlighted background. | AC-42 |
 

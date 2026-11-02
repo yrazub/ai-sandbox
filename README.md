@@ -3,8 +3,10 @@
 Enter one prompt, pick several models from [OpenRouter](https://openrouter.ai), run them in
 parallel and compare the answers side by side: text, time, tokens and cost.
 
-It is a local, single-user tool. The server listens on `127.0.0.1` only, keeps no history and has
-no login. Results live on screen and a reload clears them.
+It is a local, single-user tool. The server listens on `127.0.0.1` only, stores nothing and has
+no login. The page keeps a history of past runs (prompt, models and results) in the browser's
+`localStorage`, so it survives a reload. History is stored unencrypted in the browser profile and
+can be cleared from the page.
 
 ## Setup
 

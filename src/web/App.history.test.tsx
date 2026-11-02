@@ -315,3 +315,185 @@ describe('storage failures', () => {
     expect(await screen.findByText('This run could not be saved to history')).toBeInTheDocument();
   });
 });
+
+describe('restoring a run', () => {
+  const LONG_FIRST = 'First line of a multi-line prompt';
+  const multi = (over: Partial<HistoryEntry> = {}) =>
+    entry(1, {
+      prompt: `${LONG_FIRST}\nsecond line`,
+      models: [
+        { id: 'openai/gpt-6.1-terra', label: 'OpenAI: GPT-6.1 Terra' },
+        { id: 'a/m5', label: 'A: Five' },
+      ],
+      results: [
+        ok('openai/gpt-6.1-terra', {
+          output: '<img src=x onerror="alert(1)"><b>bold</b>',
+          costUsd: null,
+        }),
+        { status: 'error', modelId: 'a/m5', error: 'Timed out', latencyMs: 10 },
+      ],
+      ...over,
+    });
+  const restoreBtn = (excerpt = LONG_FIRST) => screen.getByRole('button', { name: `Restore: ${excerpt}` });
+  const chips = () => within(screen.getByRole('list', { name: 'Selected models' }));
+
+  async function restoreLoaded(e: HistoryEntry = multi()) {
+    seed(e);
+    const fetchFn = stubFetch();
+    const user = renderApp();
+    await screen.findByLabelText('Search');
+    await user.click(restoreBtn());
+    return { user, fetchFn };
+  }
+
+  it('makes each row a button in the History list, operable with Enter (AC-9)', async () => {
+    seed(multi());
+    stubFetch();
+    const user = renderApp();
+    await screen.findByLabelText('Search');
+    const list = screen.getByRole('list', { name: 'History' });
+    const button = within(list).getByRole('button', { name: `Restore: ${LONG_FIRST}` });
+    button.focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByLabelText('Prompt')).toHaveValue(`${LONG_FIRST}\nsecond line`);
+  });
+
+  it('restores the full prompt, selection in order and stored cards, with no request (AC-10..13)', async () => {
+    seed(multi());
+    const fetchFn = stubFetch();
+    const user = renderApp();
+    await screen.findByLabelText('Search');
+    const before = fetchFn.mock.calls.length;
+    await user.click(restoreBtn());
+    expect(screen.getByLabelText('Prompt')).toHaveValue(`${LONG_FIRST}\nsecond line`);
+    expect(chips().getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'OpenAI: GPT-6.1 Terra×',
+      'A: Five×',
+    ]);
+    const results = within(screen.getByRole('region', { name: 'Results' }));
+    expect(results.getAllByRole('article').map((a) => a.getAttribute('aria-label'))).toEqual([
+      'OpenAI: GPT-6.1 Terra',
+      'A: Five',
+    ]);
+    expect(fetchFn.mock.calls.length).toBe(before);
+  });
+
+  it('shows the From history line and the announcement (AC-14, AC-35)', async () => {
+    const e = multi();
+    await restoreLoaded(e);
+    expect(screen.getByText(`From history · ${formatRunTime(e.createdAt)}`)).toBeInTheDocument();
+    expect(screen.getByText(`Restored run from ${formatRunTime(e.createdAt)}`)).toHaveAttribute(
+      'role',
+      'status',
+    );
+  });
+
+  it('renders stored output as text, n/a for a missing cost, and error cards (AC-15)', async () => {
+    await restoreLoaded();
+    const results = screen.getByRole('region', { name: 'Results' });
+    expect(within(results).getByText('<img src=x onerror="alert(1)"><b>bold</b>')).toBeInTheDocument();
+    expect(results.querySelector('img, b')).toBeNull();
+    expect(within(results).getByText('n/a')).toBeInTheDocument();
+    expect(within(results).getByText('Timed out')).toBeInTheDocument();
+  });
+
+  it('replaces the restored cards with pending ones when a run starts (AC-16)', async () => {
+    const { user, fetchFn } = await restoreLoaded();
+    fetchFn.mockImplementation(async (url: string) => {
+      if (url === '/api/models') return Response.json({ models: MODELS });
+      return new Promise<Response>(() => {});
+    });
+    await user.click(runButton());
+    expect(screen.queryByText(/^From history/)).not.toBeInTheDocument();
+    expect(await screen.findAllByText('Waiting for the answer…')).toHaveLength(2);
+  });
+
+  it('disables restore buttons while a run is pending (AC-17)', async () => {
+    seed(multi());
+    stubFetch({ run: () => new Promise<Response>(() => {}) });
+    const user = renderApp();
+    await runOnce(user);
+    await screen.findAllByText('Waiting for the answer…');
+    expect(restoreBtn()).toBeDisabled();
+  });
+
+  it('leaves out a model the list lacks and names it in a notice until the next restore or run (AC-30, AC-31)', async () => {
+    seed(
+      multi({
+        models: [
+          { id: 'gone/model', label: 'Gone: Model' },
+          { id: 'a/m5', label: 'A: Five' },
+        ],
+        results: [
+          ok('gone/model', { output: 'stored answer' }),
+          ok('a/m5'),
+        ],
+      }),
+      entry(2, { prompt: 'Other prompt' }),
+    );
+    stubFetch({ run: okRun });
+    const user = renderApp();
+    await screen.findByLabelText('Search');
+    await user.click(restoreBtn());
+    expect(screen.queryByRole('checkbox', { name: /Gone/ })).not.toBeInTheDocument();
+    expect(chips().getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByRole('checkbox', { name: /^A: Five/ })).toBeChecked();
+    expect(screen.getByText('Not available any more: Gone: Model')).toBeInTheDocument();
+    expect(screen.getByText('stored answer')).toBeInTheDocument();
+
+    await user.click(restoreBtn('Other prompt'));
+    expect(screen.queryByText(/Not available any more/)).not.toBeInTheDocument();
+
+    await user.click(restoreBtn());
+    expect(screen.getByText(/Not available any more/)).toBeInTheDocument();
+    await user.click(runButton());
+    expect(screen.queryByText(/Not available any more/)).not.toBeInTheDocument();
+  });
+
+  it('keeps every stored model while the list has failed and selects them after Retry; Run stays disabled (AC-32, AC-33, Q1)', async () => {
+    seed(multi());
+    let fail = true;
+    stubFetch({
+      models: () => (fail ? Response.json({ error: 'down' }, { status: 500 }) : Response.json({ models: MODELS })),
+    });
+    const user = renderApp();
+    await screen.findByText(/Could not load models/);
+    await user.click(restoreBtn());
+    const articles = within(screen.getByRole('region', { name: 'Results' })).getAllByRole('article');
+    expect(articles.map((a) => a.getAttribute('aria-label'))).toEqual(['OpenAI: GPT-6.1 Terra', 'A: Five']);
+    expect(runButton()).toBeDisabled();
+
+    fail = false;
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await screen.findByLabelText('Search');
+    expect(chips().getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.getByRole('checkbox', { name: /^OpenAI/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /^A: Five/ })).toBeChecked();
+    expect(runButton()).toBeEnabled();
+  });
+
+  it('focuses the Prompt textarea (AC-34)', async () => {
+    await restoreLoaded();
+    expect(screen.getByLabelText('Prompt')).toHaveFocus();
+  });
+
+  it('marks only the shown entry with aria-current (AC-42)', async () => {
+    seed(multi(), entry(2, { prompt: 'Other prompt' }));
+    stubFetch();
+    const user = renderApp();
+    await screen.findByLabelText('Search');
+    await user.click(restoreBtn());
+    expect(restoreBtn()).toHaveAttribute('aria-current', 'true');
+    expect(restoreBtn('Other prompt')).not.toHaveAttribute('aria-current');
+  });
+
+  it('hides a failed-run alert on restore (Q7)', async () => {
+    seed(multi());
+    stubFetch({ run: () => Response.json({ error: 'bad' }, { status: 400 }) });
+    const user = renderApp();
+    await runOnce(user);
+    expect(await screen.findByText('Run failed: bad')).toBeInTheDocument();
+    await user.click(restoreBtn());
+    expect(screen.queryByText(/Run failed/)).not.toBeInTheDocument();
+  });
+});

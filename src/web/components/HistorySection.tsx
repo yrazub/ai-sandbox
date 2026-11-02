@@ -1,13 +1,16 @@
-import type { HistoryRead } from '../lib/history-storage';
+import type { HistoryEntry, HistoryRead } from '../lib/history-storage';
 import { failedCount, formatModelLabels, formatRunTime, promptExcerpt, totalCost } from './history-format';
 import { formatCost } from './result-format';
 
 interface Props {
   history: HistoryRead;
   saveFailed: boolean;
+  disabled: boolean;
+  currentId: string | undefined;
+  onRestore: (entry: HistoryEntry) => void;
 }
 
-export function HistorySection({ history, saveFailed }: Props) {
+export function HistorySection({ history, saveFailed, disabled, currentId, onRestore }: Props) {
   const entries = history.status === 'available' ? history.entries : [];
 
   return (
@@ -31,16 +34,28 @@ export function HistorySection({ history, saveFailed }: Props) {
           {entries.map((entry) => {
             const failed = failedCount(entry.results);
             return (
-              <li className="history-row" key={entry.id}>
-                <time className="history-time" dateTime={entry.createdAt}>
-                  {formatRunTime(entry.createdAt)}
-                </time>
-                <span className="history-excerpt">{promptExcerpt(entry.prompt)}</span>
-                <span className="history-meta">
-                  {formatModelLabels(entry.models)}
-                  {failed > 0 && <span className="history-failed">{failed} failed</span>}
-                  {formatCost(totalCost(entry.results))}
-                </span>
+              <li
+                className={entry.id === currentId ? 'history-row history-row-current' : 'history-row'}
+                key={entry.id}
+              >
+                <button
+                  type="button"
+                  className="history-restore"
+                  aria-label={`Restore: ${promptExcerpt(entry.prompt)}`}
+                  aria-current={entry.id === currentId ? 'true' : undefined}
+                  disabled={disabled}
+                  onClick={() => onRestore(entry)}
+                >
+                  <time className="history-time" dateTime={entry.createdAt}>
+                    {formatRunTime(entry.createdAt)}
+                  </time>
+                  <span className="history-excerpt">{promptExcerpt(entry.prompt)}</span>
+                  <span className="history-meta">
+                    {formatModelLabels(entry.models)}
+                    {failed > 0 && <span className="history-failed">{failed} failed</span>}
+                    {formatCost(totalCost(entry.results))}
+                  </span>
+                </button>
               </li>
             );
           })}

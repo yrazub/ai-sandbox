@@ -48,6 +48,43 @@ Open <http://localhost:5173>. The API runs on `127.0.0.1:4000`; Vite proxies `/a
 
 Each call is limited to 1024 output tokens, and a prompt to 20,000 characters.
 
+## History
+
+Every run that returns results is saved in the browser's `localStorage` under the key
+`ai-sandbox:history:v1`, newest first, up to 50 runs. A run whose request fails (4xx, 5xx or an
+unreachable server) is not saved. The server never sees the history.
+
+The History section below the results lists each run with its local date and time, the first line
+of the prompt (cut at 100 characters), the model labels, "N failed" when any model failed, and the
+total cost. The total sums the successful models and reads `n/a` when none succeeded or one of
+them reported no cost.
+
+- **Restore.** Click a row. The prompt, the model selection and the stored result cards come back
+  under a "From history" line, and focus moves to the prompt. Restoring sends no request and
+  spends no credits. A stored model that the loaded model list no longer offers is left unselected
+  and named in a notice. Pressing **Run** replaces the restored cards. **Run** stays disabled until
+  the model list has loaded.
+- **Delete one run.** Press `×` on its row. There is no confirmation.
+- **Clear all.** Press **Clear history**, then **Clear** to confirm or **Cancel**.
+- Deleting or clearing does not remove the cards on screen. Restore, delete and clear are disabled
+  while a run is in progress.
+
+How it behaves when storage is not ideal:
+
+- **Storage full.** The oldest runs are dropped one at a time until the new run fits. If it still
+  does not fit, the page shows "This run could not be saved to history" and keeps the cards.
+- **Storage unavailable.** The section shows "History is unavailable in this browser". Runs work as
+  usual.
+- **Invalid data.** Each stored run is checked on read; runs that break the prompt, model or result
+  limits are skipped. A value that is not valid JSON reads as an empty history and is replaced on
+  the next save.
+- **Several tabs.** A save re-reads the key first, so one tab does not erase the runs another tab
+  saved, and a change made in another tab shows up without a reload.
+
+The code is in [`src/web/lib/history-storage.ts`](src/web/lib/history-storage.ts) (the only file
+that touches `localStorage`), [`src/web/hooks/use-history.ts`](src/web/hooks/use-history.ts) and
+[`src/web/components/HistorySection.tsx`](src/web/components/HistorySection.tsx).
+
 ## Commands
 
 | | |

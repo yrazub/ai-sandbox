@@ -5,7 +5,12 @@ import type { UsageResponse } from '../../shared/contracts';
 export const usageQueryKey = ['usage'] as const;
 
 export function useUsage(): { usage: UsageResponse | undefined; failed: boolean } {
-  const query = useQuery({ queryKey: usageQueryKey, queryFn: fetchUsage });
+  const query = useQuery({
+    queryKey: usageQueryKey,
+    queryFn: fetchUsage,
+    // The global default is off; only the footer follows the window focus.
+    refetchOnWindowFocus: true,
+  });
   // TanStack clears `error` when a fetch starts with no data, so a retry after a failed
   // first load would flash "loading"; the error count keeps the footer on "unavailable".
   const failed = query.isError || (query.data === undefined && query.errorUpdateCount > 0);

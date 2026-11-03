@@ -41,8 +41,8 @@ src/server/
   modules/runs/              ports.ts, domain.ts, model-catalog.ts, service.ts (also the in-memory usage tally), routes.ts (incl. GET /api/usage)
 src/web/
   main.tsx, App.tsx          App only composes the page
-  components/                one exported component per file, plus the plain helpers next to them
-  hooks/                     use-models.ts, use-run-models.ts (TanStack Query), use-history.ts
+  components/                one exported component per file, plus the plain helpers next to them; SessionFooter.tsx + usage-format.ts (session usage footer)
+  hooks/                     use-models.ts, use-run-models.ts (TanStack Query), use-history.ts, use-usage.ts
   lib/                       api-client.ts, query-client.ts, history-storage.ts (localStorage)
 docs/plans/                  approved plans
 docs/specs/                  feature specs (see docs/specs/README.md)

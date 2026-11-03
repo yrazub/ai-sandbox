@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ModelInfo, RunResult, UsageResponse } from '../shared/contracts';
 import { App } from './App';
 import { formatSessionStart, formatTokenTotal } from './components/usage-format';
-import { HISTORY_KEY } from './lib/history-storage';
+import { HISTORY_KEY, type HistoryEntry } from './lib/history-storage';
 import { createQueryClient } from './lib/query-client';
 
 afterEach(() => {
@@ -224,5 +224,261 @@ describe('session footer', () => {
     await screen.findByRole('article', { name: 'A: Five' });
     await waitFor(() => expect(localStorage.getItem(HISTORY_KEY)).not.toBeNull());
     expectNoUsageStored();
+  });
+});
+
+// ---- Phase 3: refresh triggers ----
+
+const FIRST = tally({ inputTokens: 100, outputTokens: 50, costUsd: 0.001, okCalls: 1 });
+const SECOND = tally({ inputTokens: 12000, outputTokens: 400, costUsd: 0.004, okCalls: 2 });
+const FIRST_TEXT = `${formatTokenTotal(FIRST)} tokens · $0.0010`;
+const SECOND_TEXT = `${formatTokenTotal(SECOND)} tokens · $0.0040`;
+
+type Step = () => Response | Promise<Response>;
+
+/** Answers the nth call with the nth step; the last step answers every later call. */
+function sequence(...steps: Step[]): Step {
+  let i = 0;
+  return () => steps[Math.min(i++, steps.length - 1)]!();
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+const json =
+  (body: unknown, status = 200): Step =>
+  () =>
+    Response.json(body, { status });
+
+/** Lets any request that would be sent on its own start before a "no new request" check. */
+const settle = () =>
+  act(async () => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+
+const okRun = () => Response.json({ results: [ok('a/m5')] });
+
+describe('refreshing after a run', () => {
+  it.each([
+    ['a 200', okRun, true],
+    ['a 400', () => Response.json({ error: 'bad' }, { status: 400 }), false],
+    [
+      'a request that throws TypeError',
+      () => {
+        throw new TypeError('network');
+      },
+      false,
+    ],
+  ])('requests the tally once more after %s (AC-22)', async (_name, run, shows) => {
+    const { count } = stubFetch({ usage: sequence(json(FIRST), json(SECOND)), run });
+    const user = renderApp();
+    await waitFor(() => expect(footer()).toHaveTextContent(FIRST_TEXT));
+    expect(count('/api/usage')).toBe(1);
+
+    await runOnce(user);
+
+    await waitFor(() => expect(count('/api/usage')).toBe(2));
+    await settle();
+    expect(count('/api/usage')).toBe(2);
+    expect(count('/api/runs')).toBe(1);
+    if (shows) await waitFor(() => expect(footer()).toHaveTextContent(SECOND_TEXT));
+  });
+
+  it('keeps the first tally and sends no usage request while a run is pending, then refreshes (AC-24)', async () => {
+    const release = deferred<Response>();
+    const { count } = stubFetch({ usage: sequence(json(FIRST), json(SECOND)), run: () => release.promise });
+    const user = renderApp();
+    await waitFor(() => expect(footer()).toHaveTextContent(FIRST_TEXT));
+
+    await runOnce(user);
+    await waitFor(() => expect(count('/api/runs')).toBe(1));
+    await settle();
+
+    expect(footer()).toHaveTextContent(FIRST_TEXT);
+    expect(footer()).not.toHaveTextContent(SECOND_TEXT);
+    expect(count('/api/usage')).toBe(1);
+
+    release.resolve(okRun());
+
+    await waitFor(() => expect(count('/api/usage')).toBe(2));
+    await waitFor(() => expect(footer()).toHaveTextContent(SECOND_TEXT));
+  });
+
+  it('keeps the previous totals, with no loading text, while the next request is in flight (AC-19)', async () => {
+    const held = deferred<Response>();
+    const { count } = stubFetch({ usage: sequence(json(FIRST), () => held.promise), run: okRun });
+    const user = renderApp();
+    await waitFor(() => expect(footer()).toHaveTextContent(FIRST_TEXT));
+
+    const seen: string[] = [];
+    const observer = new MutationObserver(() => seen.push(footer().textContent ?? ''));
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+
+    await runOnce(user);
+    await waitFor(() => expect(count('/api/usage')).toBe(2));
+    await settle();
+    observer.disconnect();
+
+    expect(footer()).toHaveTextContent(FIRST_TEXT);
+    expect(seen.filter((text) => text.includes('loading'))).toEqual([]);
+  });
+
+  it('re-enables Run while the usage refetch is still pending (base AC-2)', async () => {
+    const held = deferred<Response>();
+    const { count } = stubFetch({ usage: sequence(json(FIRST), () => held.promise), run: okRun });
+    const user = renderApp();
+    await waitFor(() => expect(footer()).toHaveTextContent(FIRST_TEXT));
+
+    await runOnce(user);
+    await screen.findByRole('article', { name: 'A: Five' });
+    await waitFor(() => expect(count('/api/usage')).toBe(2));
+
+    expect(runButton()).toBeEnabled();
+  });
+
+  it('shows "unavailable" after a failed refetch, also while the next one is in flight, until one succeeds (AC-20, Q3)', async () => {
+    const held = deferred<Response>();
+    const { count } = stubFetch({
+      usage: sequence(json(FIRST), json({ error: 'boom' }, 500), () => held.promise),
+      run: okRun,
+    });
+    const user = renderApp();
+    await waitFor(() => expect(footer()).toHaveTextContent(FIRST_TEXT));
+
+    await runOnce(user);
+    await waitFor(() => expect(footer()).toHaveTextContent('Session usage unavailable'));
+    expect(footer().textContent).toBe('Session usage unavailable');
+
+    await waitFor(() => expect(runButton()).toBeEnabled());
+    await user.click(runButton());
+    await waitFor(() => expect(count('/api/usage')).toBe(3));
+    await settle();
+    expect(footer().textContent).toBe('Session usage unavailable');
+
+    held.resolve(Response.json(SECOND));
+    await waitFor(() => expect(footer()).toHaveTextContent(SECOND_TEXT));
+  });
+
+  it('stays "unavailable", not "loading", while a focus refetch follows a failed first load (AC-20, Q3)', async () => {
+    const held = deferred<Response>();
+    const { count } = stubFetch({ usage: sequence(json({ error: 'boom' }, 500), () => held.promise) });
+    renderApp();
+    await waitFor(() => expect(footer()).toHaveTextContent('Session usage unavailable'));
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(count('/api/usage')).toBe(2));
+    await settle();
+
+    expect(footer().textContent).toBe('Session usage unavailable');
+  });
+});
+
+function entry(n: number): HistoryEntry {
+  return {
+    id: `id-${n}`,
+    createdAt: new Date(Date.UTC(2026, 0, 1, 0, n)).toISOString(),
+    prompt: `prompt ${n}`,
+    models: [{ id: 'a/m5', label: 'A: Five' }],
+    results: [ok('a/m5')],
+  };
+}
+
+describe('history actions', () => {
+  it('send no usage request on restore, delete or clear (AC-23)', async () => {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify([entry(1), entry(2)]));
+    const { count } = stubFetch({ usage: json(FIRST) });
+    const user = renderApp();
+    await screen.findByLabelText('Search');
+    await waitFor(() => expect(footer()).toHaveTextContent(FIRST_TEXT));
+    expect(count('/api/usage')).toBe(1);
+
+    await user.click(screen.getByRole('button', { name: 'Restore: prompt 1' }));
+    await settle();
+    expect(count('/api/usage')).toBe(1);
+
+    await user.click(screen.getByRole('button', { name: 'Delete run: prompt 1' }));
+    await settle();
+    expect(count('/api/usage')).toBe(1);
+
+    await user.click(screen.getByRole('button', { name: 'Clear history' }));
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    await settle();
+    expect(screen.getByText('No runs yet')).toBeInTheDocument();
+    expect(count('/api/usage')).toBe(1);
+  });
+});
+
+describe('refreshing on window focus', () => {
+  async function loaded() {
+    const stub = stubFetch({ usage: sequence(json(FIRST), json(SECOND)) });
+    renderApp();
+    await screen.findByLabelText('Search');
+    await waitFor(() => expect(footer()).toHaveTextContent(FIRST_TEXT));
+    return stub;
+  }
+
+  it('refetches only the usage query on a window focus (AC-34)', async () => {
+    const { count } = await loaded();
+    expect(count('/api/usage')).toBe(1);
+    expect(count('/api/models')).toBe(1);
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => expect(count('/api/usage')).toBe(2));
+    await waitFor(() => expect(footer()).toHaveTextContent(SECOND_TEXT));
+    await settle();
+    expect(count('/api/usage')).toBe(2);
+    expect(count('/api/models')).toBe(1);
+  });
+
+  it('refetches only the usage query on a visibilitychange (AC-34)', async () => {
+    const { count } = await loaded();
+
+    // Browsers fire it on document and it bubbles to window.
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+    });
+
+    await waitFor(() => expect(count('/api/usage')).toBe(2));
+    await settle();
+    expect(count('/api/usage')).toBe(2);
+    expect(count('/api/models')).toBe(1);
+  });
+
+  it('sends one request when focus and visibilitychange fire together (AC-34)', async () => {
+    const held = deferred<Response>();
+    const { count } = stubFetch({ usage: sequence(json(FIRST), () => held.promise) });
+    renderApp();
+    await waitFor(() => expect(footer()).toHaveTextContent(FIRST_TEXT));
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+      document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+    });
+    await waitFor(() => expect(count('/api/usage')).toBe(2));
+    await settle();
+
+    expect(count('/api/usage')).toBe(2);
+  });
+
+  it('sends no request when an element gets focus (AC-34, AC-23)', async () => {
+    const { count } = await loaded();
+
+    act(() => {
+      screen.getByLabelText('Prompt').focus();
+    });
+    await settle();
+
+    expect(document.activeElement).toBe(screen.getByLabelText('Prompt'));
+    expect(count('/api/usage')).toBe(1);
   });
 });

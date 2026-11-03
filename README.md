@@ -3,8 +3,8 @@
 Enter one prompt, pick several models from [OpenRouter](https://openrouter.ai), run them in
 parallel and compare the answers side by side: text, time, tokens and cost.
 
-It is a local, single-user tool. The server listens on `127.0.0.1` only, stores nothing and has
-no login. The page keeps a history of past runs (prompt, models and results) in the browser's
+It is a local, single-user tool. The server listens on `127.0.0.1` only, stores nothing on disk;
+keeps an in-memory usage tally reset on restart and has no login. The page keeps a history of past runs (prompt, models and results) in the browser's
 `localStorage`, so it survives a reload. History is stored unencrypted in the browser profile and
 can be cleared from the page.
 
@@ -84,6 +84,25 @@ How it behaves when storage is not ideal:
 The code is in [`src/web/lib/history-storage.ts`](src/web/lib/history-storage.ts) (the only file
 that touches `localStorage`), [`src/web/hooks/use-history.ts`](src/web/hooks/use-history.ts) and
 [`src/web/components/HistorySection.tsx`](src/web/components/HistorySection.tsx).
+
+## Session usage
+
+The footer below the History section shows the input and output tokens and the cost of every
+successful model call since the server started.
+
+- **One tally for all clients.** Every tab and client feeds the same tally, which lives in the
+  server's memory.
+- **Resets on restart.** This includes each `tsx watch` restart under `npm run dev`. Nothing is
+  written to disk or to the browser.
+- **Successful results only.** The tally counts usage reported for successful results, so it can
+  be lower than the OpenRouter bill: a failed or timed-out call may still be billed.
+- **Calls without cost.** A successful call that reports no cost adds its tokens and is counted as
+  one of the "calls without cost".
+- **Refresh.** The footer refreshes when a run settles and when the window regains focus.
+
+The code is in [`src/web/components/SessionFooter.tsx`](src/web/components/SessionFooter.tsx),
+[`src/web/hooks/use-usage.ts`](src/web/hooks/use-usage.ts) and `GET /api/usage` in
+[`src/server/modules/runs/routes.ts`](src/server/modules/runs/routes.ts).
 
 ## Commands
 

@@ -1,4 +1,4 @@
-import type { FormEvent, ReactNode } from 'react';
+import type { FormEvent, ReactNode, Ref } from 'react';
 import { MAX_PROMPT_CHARS } from '../../shared/contracts';
 
 interface Props {
@@ -7,11 +7,12 @@ interface Props {
   canRun: boolean;
   running: boolean;
   onRun: () => void;
+  textareaRef?: Ref<HTMLTextAreaElement>;
   /** The model picker sits between the prompt and the Run button. */
   children: ReactNode;
 }
 
-export function PromptForm({ prompt, onPromptChange, canRun, running, onRun, children }: Props) {
+export function PromptForm({ prompt, onPromptChange, canRun, running, onRun, textareaRef, children }: Props) {
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (canRun) onRun();
@@ -22,6 +23,7 @@ export function PromptForm({ prompt, onPromptChange, canRun, running, onRun, chi
       <label htmlFor="prompt">Prompt</label>
       <textarea
         id="prompt"
+        ref={textareaRef}
         value={prompt}
         maxLength={MAX_PROMPT_CHARS}
         rows={5}

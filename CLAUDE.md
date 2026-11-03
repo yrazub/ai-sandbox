@@ -42,8 +42,8 @@ src/server/
 src/web/
   main.tsx, App.tsx          App only composes the page
   components/                one exported component per file, plus the plain helpers next to them
-  hooks/                     use-models.ts, use-run-models.ts (TanStack Query)
-  lib/                       api-client.ts, query-client.ts
+  hooks/                     use-models.ts, use-run-models.ts (TanStack Query), use-history.ts
+  lib/                       api-client.ts, query-client.ts, history-storage.ts (localStorage)
 docs/plans/                  approved plans
 docs/specs/                  feature specs (see docs/specs/README.md)
 ```
@@ -78,6 +78,9 @@ Frontend:
 - Components receive data and callbacks; they do not call `fetch`. All requests go through
   `lib/api-client.ts`, and all server data through TanStack Query. Never copy server data into
   `useState`.
+- Run history is browser-owned data in `localStorage`, nothing on the server. Only
+  `lib/history-storage.ts` touches `localStorage`; components read history through
+  `hooks/use-history.ts`, never directly. Stored data is validated on read.
 - Business rules (search, price and cost formatting) are plain functions next to their component,
   unit-tested without React.
 - Model output renders as plain text, never as HTML or Markdown.

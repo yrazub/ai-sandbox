@@ -1,17 +1,40 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ModelPicker } from './components/ModelPicker';
 import { PromptForm } from './components/PromptForm';
+import { HistorySection } from './components/HistorySection';
+import { formatModelLabels, formatRunTime } from './components/history-format';
+import { restoreSelection } from './components/history-restore';
 import { ResultsGrid } from './components/ResultsGrid';
+import { useHistory } from './hooks/use-history';
 import { useModels } from './hooks/use-models';
 import { useRunModels } from './hooks/use-run-models';
+import { buildHistoryEntry, modelLabels, type HistoryEntry, type HistoryModel } from './lib/history-storage';
 
 export function App() {
   const [prompt, setPrompt] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [restored, setRestored] = useState<HistoryEntry | null>(null);
+  const [leftOut, setLeftOut] = useState<HistoryModel[]>([]);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const models = useModels();
-  const run = useRunModels();
+  const history = useHistory();
+  const run = useRunModels({
+    onSuccess: (results, request) =>
+      history.record(buildHistoryEntry({ request, results, models: models.data })),
+  });
 
-  const canRun = prompt.trim().length > 0 && selectedIds.length > 0 && !run.isPending;
+  const canRun =
+    prompt.trim().length > 0 && selectedIds.length > 0 && models.data !== undefined && !run.isPending;
+
+  function handleRestore(entry: HistoryEntry) {
+    setPrompt(entry.prompt);
+    const selection = restoreSelection(entry.models, models.data);
+    setSelectedIds(selection.selectedIds);
+    setLeftOut(selection.leftOut);
+    setRestored(entry);
+    run.reset();
+    textareaRef.current?.focus();
+  }
 
   return (
     <main>
@@ -21,8 +44,14 @@ export function App() {
         prompt={prompt}
         onPromptChange={setPrompt}
         canRun={canRun}
+        textareaRef={textareaRef}
         running={run.isPending}
-        onRun={() => run.mutate({ prompt, modelIds: selectedIds })}
+        onRun={() => {
+          history.resetSaveFailed();
+          setRestored(null);
+          setLeftOut([]);
+          run.mutate({ prompt, modelIds: selectedIds });
+        }}
       >
         <ModelPicker
           models={models.data}
@@ -33,7 +62,16 @@ export function App() {
           onSelectedIdsChange={setSelectedIds}
           disabled={run.isPending}
         />
+        {leftOut.length > 0 && (
+          <p role="status" className="meta history-notice">
+            Not available any more: {formatModelLabels(leftOut)}
+          </p>
+        )}
       </PromptForm>
+
+      <p role="status" className="visually-hidden">
+        {restored ? `Restored run from ${formatRunTime(restored.createdAt)}` : ''}
+      </p>
 
       {run.isError && (
         <p role="alert" className="notice notice-error">
@@ -41,9 +79,31 @@ export function App() {
         </p>
       )}
 
-      {run.variables && models.data && (run.isPending || run.data) && (
-        <ResultsGrid modelIds={run.variables.modelIds} models={models.data} results={run.data} />
+      {restored ? (
+        <>
+          <p className="meta restored-line">From history · {formatRunTime(restored.createdAt)}</p>
+          <ResultsGrid models={restored.models} results={restored.results} />
+        </>
+      ) : (
+        run.variables &&
+        models.data &&
+        (run.isPending || run.data) && (
+          <ResultsGrid
+            models={modelLabels(run.variables.modelIds, models.data)}
+            results={run.data}
+          />
+        )
       )}
+
+      <HistorySection
+        history={history.history}
+        saveFailed={history.saveFailed}
+        disabled={run.isPending}
+        currentId={restored?.id}
+        onRestore={handleRestore}
+        onDelete={history.remove}
+        onClear={history.clear}
+      />
     </main>
   );
 }

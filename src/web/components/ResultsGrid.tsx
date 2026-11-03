@@ -1,20 +1,18 @@
-import type { ModelInfo, RunResult } from '../../shared/contracts';
+import type { RunResult } from '../../shared/contracts';
 import { ResultCard } from './ResultCard';
 
 interface Props {
   /** The models of the run, in the order they were selected. */
-  modelIds: string[];
-  models: ModelInfo[];
+  models: { id: string; label: string }[];
   /** undefined while the run is in progress. */
   results: RunResult[] | undefined;
 }
 
-export function ResultsGrid({ modelIds, models, results }: Props) {
-  const labels = new Map(models.map((model) => [model.id, model.label]));
+export function ResultsGrid({ models, results }: Props) {
   return (
     <section className="results" aria-label="Results">
-      {modelIds.map((id, index) => (
-        <ResultCard key={id} label={labels.get(id) ?? id} result={results?.[index]} />
+      {models.map(({ id, label }, index) => (
+        <ResultCard key={id} label={label} result={results?.[index]} />
       ))}
     </section>
   );

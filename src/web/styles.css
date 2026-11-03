@@ -368,9 +368,28 @@ button:disabled {
   margin: 0.5rem 0;
 }
 
+.session-footer {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 0.5rem 1rem 1rem;
+}
+
+.session-footer p {
+  margin: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
 @media (max-width: 40rem) {
   main {
     padding: 0.75rem;
+  }
+
+  .session-footer {
+    padding: 0.5rem 0.75rem 1rem;
   }
 
   .model-list li > label {

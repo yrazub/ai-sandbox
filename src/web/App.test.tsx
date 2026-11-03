@@ -35,9 +35,19 @@ interface Stub {
   run?: (body: { prompt: string; modelIds: string[] }) => Response | Promise<Response>;
 }
 
+const ZERO_USAGE = {
+  inputTokens: 0,
+  outputTokens: 0,
+  costUsd: 0,
+  okCalls: 0,
+  unpricedCalls: 0,
+  startedAt: '2026-11-03T14:02:00.000Z',
+};
+
 function stubFetch({ models = () => Response.json({ models: MODELS }), run }: Stub = {}) {
   const fn = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/models') return models();
+    if (url === '/api/usage') return Response.json(ZERO_USAGE);
     if (url === '/api/runs' && run) return run(JSON.parse(init?.body as string));
     throw new Error(`Unexpected request: ${url}`);
   });
@@ -102,7 +112,7 @@ describe('model list', () => {
 
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByRole('list', { name: 'Available models' })).toBeInTheDocument();
-    expect(fn).toHaveBeenCalledTimes(2);
+    expect(fn.mock.calls.filter(([url]) => url === '/api/models')).toHaveLength(2);
   });
 
   it('shows an error when the server cannot be reached (AC-14)', async () => {

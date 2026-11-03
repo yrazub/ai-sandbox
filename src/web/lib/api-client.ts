@@ -3,6 +3,7 @@ import {
   ErrorResponse,
   ModelsResponse,
   RunResponse,
+  UsageResponse,
   type RunRequest,
 } from '../../shared/contracts';
 
@@ -30,6 +31,10 @@ async function call<S extends z.ZodType>(
 
 export async function fetchModels() {
   return (await call('/api/models', ModelsResponse)).models;
+}
+
+export async function fetchUsage(): Promise<UsageResponse> {
+  return call('/api/usage', UsageResponse);
 }
 
 export async function postRun(request: RunRequest) {

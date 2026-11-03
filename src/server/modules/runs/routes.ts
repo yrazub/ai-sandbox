@@ -1,6 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { ErrorResponse, ModelsResponse, RunRequest, RunResponse } from '../../../shared/contracts';
+import {
+  ErrorResponse,
+  ModelsResponse,
+  RunRequest,
+  RunResponse,
+  UsageResponse,
+} from '../../../shared/contracts';
 import type { RunService } from './service';
 
 export function registerRunRoutes(app: FastifyInstance, service: RunService): void {
@@ -21,5 +27,14 @@ export function registerRunRoutes(app: FastifyInstance, service: RunService): vo
       },
     },
     async (request) => service.run(request.body),
+  );
+
+  typed.get(
+    '/api/usage',
+    { schema: { response: { 200: UsageResponse } } },
+    async (_request, reply) => {
+      reply.header('cache-control', 'no-store');
+      return service.usage();
+    },
   );
 }

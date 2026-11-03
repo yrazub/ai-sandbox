@@ -1,12 +1,25 @@
-import type { ModelInfo, RunRequest, RunResponse, RunResult } from '../../../shared/contracts';
+import type {
+  ModelInfo,
+  RunRequest,
+  RunResponse,
+  RunResult,
+  UsageResponse,
+} from '../../../shared/contracts';
 import { AppError, ValidationError } from '../../platform/errors';
-import { CALL_TIMEOUT_MS, MAX_TOKENS_PER_CALL } from './domain';
+import {
+  addRunToUsage,
+  CALL_TIMEOUT_MS,
+  EMPTY_USAGE,
+  MAX_TOKENS_PER_CALL,
+  type UsageTotals,
+} from './domain';
 import type { ModelCatalog } from './model-catalog';
 import type { LlmProvider } from './ports';
 
 export interface RunService {
   models(): Promise<ModelInfo[]>;
   run(request: RunRequest): Promise<RunResponse>;
+  usage(): UsageResponse;
 }
 
 interface Options {
@@ -22,6 +35,10 @@ export function createRunService({
   timeoutMs = CALL_TIMEOUT_MS,
   now = Date.now,
 }: Options): RunService {
+  // In-memory tally of the ok calls since this service was created. Never persisted.
+  const tallyStartedAt = new Date(now()).toISOString();
+  let totals: UsageTotals = EMPTY_USAGE;
+
   async function runOne(modelId: string, prompt: string): Promise<RunResult> {
     const startedAt = now();
     const controller = new AbortController();
@@ -63,7 +80,11 @@ export function createRunService({
       }
       // Promise.all keeps the order of modelIds.
       const results = await Promise.all(modelIds.map((id) => runOne(id, prompt)));
+      // Read and written in this one synchronous statement, so concurrent runs lose nothing.
+      totals = addRunToUsage(totals, results);
       return { results };
     },
+
+    usage: () => ({ ...totals, startedAt: tallyStartedAt }),
   };
 }

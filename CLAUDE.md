@@ -38,7 +38,7 @@ src/server/
   app.ts                     composition root: Fastify, error handler, wires the run module
   platform/                  config.ts (env parsing), errors.ts (AppError and subclasses)
   adapters/openrouter/       openrouter-provider.ts (real), mock-provider.ts (test double)
-  modules/runs/              ports.ts, domain.ts, model-catalog.ts, service.ts, routes.ts
+  modules/runs/              ports.ts, domain.ts, model-catalog.ts, service.ts (also the in-memory usage tally), routes.ts (incl. GET /api/usage)
 src/web/
   main.tsx, App.tsx          App only composes the page
   components/                one exported component per file, plus the plain helpers next to them

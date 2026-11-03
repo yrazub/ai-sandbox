@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { MockProvider } from '../../adapters/openrouter/mock-provider';
 import { OpenRouterProvider } from '../../adapters/openrouter/openrouter-provider';
 import { buildApp } from '../../app';
 import { MAX_PROMPT_CHARS } from '../../../shared/contracts';
+import type { Completion } from './ports';
 
 let app: FastifyInstance;
 afterEach(() => app.close());
@@ -105,6 +106,193 @@ describe('POST /api/runs', () => {
     const response = await run({ prompt: 'hi', modelIds: ['mock/fast'] });
     expect(response.statusCode).toBe(503);
     expect(provider.calls).toHaveLength(0);
+  });
+});
+
+describe('GET /api/usage', () => {
+  const post = (payload: object) => app.inject({ method: 'POST', url: '/api/runs', payload });
+  const usage = () => app.inject({ method: 'GET', url: '/api/usage' });
+  const zero = { inputTokens: 0, outputTokens: 0, costUsd: 0, okCalls: 0, unpricedCalls: 0 };
+
+  it('answers zeros and the start time for a fresh app', async () => {
+    const before = Date.now();
+    start();
+    const response = await usage();
+    const after = Date.now();
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(Object.keys(body).sort()).toEqual(
+      ['costUsd', 'inputTokens', 'okCalls', 'outputTokens', 'startedAt', 'unpricedCalls'].sort(),
+    );
+    expect(body).toMatchObject(zero);
+    expect(Date.parse(body.startedAt)).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(body.startedAt)).toBeLessThanOrEqual(after);
+  });
+
+  it('forbids caching the 200', async () => {
+    start();
+    const response = await usage();
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+  });
+
+  it('calls no provider and answers the same body twice', async () => {
+    const provider = start();
+    const first = await usage();
+    const second = await usage();
+    expect(provider.calls).toHaveLength(0);
+    expect(provider.listCalls).toBe(0);
+    expect(second.json()).toEqual(first.json());
+  });
+
+  it('reports the ok results of a finished run', async () => {
+    start();
+    const run = await post({ prompt: 'hi', modelIds: ['mock/fast', 'mock/smart'] });
+    expect(run.statusCode).toBe(200);
+    expect((await usage()).json()).toMatchObject({
+      inputTokens: 20,
+      outputTokens: 40,
+      costUsd: 0.0001 + 0.0001,
+      okCalls: 2,
+      unpricedCalls: 0,
+    });
+  });
+
+  it('leaves out the model that failed in a 200 run', async () => {
+    start(
+      new MockProvider({
+        respond: ({ modelId }) => {
+          if (modelId === 'mock/smart') throw new Error('boom');
+          return { output: 'ok', inputTokens: 7, outputTokens: 9, costUsd: 0.5 };
+        },
+      }),
+    );
+    const run = await post({ prompt: 'hi', modelIds: ['mock/fast', 'mock/smart'] });
+    expect(run.statusCode).toBe(200);
+    expect((await usage()).json()).toMatchObject({
+      inputTokens: 7,
+      outputTokens: 9,
+      costUsd: 0.5,
+      okCalls: 1,
+      unpricedCalls: 0,
+    });
+  });
+
+  describe('after a rejected run', () => {
+    it.each([
+      ['a blank prompt', { prompt: '   ', modelIds: ['mock/fast'] }],
+      ['a missing prompt', { modelIds: ['mock/fast'] }],
+      ['a prompt over the limit', { prompt: 'x'.repeat(MAX_PROMPT_CHARS + 1), modelIds: ['mock/fast'] }],
+      ['no models', { prompt: 'hi', modelIds: [] }],
+      [
+        'more than 6 models',
+        { prompt: 'hi', modelIds: ['a/1', 'a/2', 'a/3', 'a/4', 'a/5', 'a/6', 'a/7'] },
+      ],
+      ['duplicate models', { prompt: 'hi', modelIds: ['mock/fast', 'mock/fast'] }],
+      ['a model not in the list', { prompt: 'hi', modelIds: ['mock/fast', 'evil/model'] }],
+    ])('keeps the tally at zero for 400 on %s', async (_name, payload) => {
+      start();
+      expect((await post(payload)).statusCode).toBe(400);
+      expect((await usage()).json()).toMatchObject(zero);
+    });
+
+    it('keeps the tally at zero for malformed JSON', async () => {
+      start();
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/runs',
+        headers: { 'content-type': 'application/json' },
+        payload: '{nope',
+      });
+      expect(response.statusCode).toBe(400);
+      expect((await usage()).json()).toMatchObject(zero);
+    });
+
+    it('keeps the tally at zero for 503 when the model list is unavailable', async () => {
+      start(new MockProvider({ listError: new Error('down') }));
+      expect((await post({ prompt: 'hi', modelIds: ['mock/fast'] })).statusCode).toBe(503);
+      expect((await usage()).json()).toMatchObject(zero);
+    });
+
+    it('keeps what earlier runs added', async () => {
+      start();
+      await post({ prompt: 'hi', modelIds: ['mock/fast'] });
+      const before = (await usage()).json();
+      expect(before.okCalls).toBe(1);
+      expect((await post({ prompt: '   ', modelIds: ['mock/fast'] })).statusCode).toBe(400);
+      expect((await usage()).json()).toEqual(before);
+    });
+  });
+
+  it('adds both runs when two overlap and finish in reverse order', async () => {
+    const releases = new Map<string, (completion: Completion) => void>();
+    const provider = start(
+      new MockProvider({
+        respond: ({ modelId }) =>
+          new Promise<Completion>((resolve) => {
+            releases.set(modelId, resolve);
+          }),
+      }),
+    );
+    const first = post({ prompt: 'a', modelIds: ['mock/fast'] });
+    const second = post({ prompt: 'b', modelIds: ['mock/smart'] });
+    await vi.waitFor(() => expect(provider.calls).toHaveLength(2));
+
+    releases.get('mock/smart')?.({ output: 'b', inputTokens: 100, outputTokens: 200, costUsd: 0.25 });
+    releases.get('mock/fast')?.({ output: 'a', inputTokens: 1, outputTokens: 2, costUsd: 0.5 });
+    expect((await first).statusCode).toBe(200);
+    expect((await second).statusCode).toBe(200);
+
+    expect((await usage()).json()).toMatchObject({
+      inputTokens: 101,
+      outputTokens: 202,
+      costUsd: 0.25 + 0.5,
+      okCalls: 2,
+      unpricedCalls: 0,
+    });
+  });
+
+  it('counts an ok call without a cost as unpriced', async () => {
+    start(
+      new MockProvider({
+        respond: () => ({ output: 'x', inputTokens: 4, outputTokens: 5, costUsd: null }),
+      }),
+    );
+    await post({ prompt: 'hi', modelIds: ['mock/fast'] });
+    expect((await usage()).json()).toMatchObject({
+      inputTokens: 4,
+      outputTokens: 5,
+      costUsd: 0,
+      okCalls: 1,
+      unpricedCalls: 1,
+    });
+  });
+
+  it('answers a generic 500 with no tally value when the tally breaks the contract', async () => {
+    start(
+      new MockProvider({
+        respond: () => ({ output: 'x', inputTokens: -5, outputTokens: 7, costUsd: 0.5 }),
+      }),
+    );
+    expect((await post({ prompt: 'hi', modelIds: ['mock/fast'] })).statusCode).toBe(200);
+    const response = await usage();
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({ error: 'Internal server error' });
+    expect(response.body).not.toMatch(/\d/);
+  });
+
+  it('keeps a separate tally for each app', async () => {
+    start();
+    await post({ prompt: 'hi', modelIds: ['mock/fast'] });
+    const firstApp = app;
+    const firstUsage = (await usage()).json();
+    start();
+    try {
+      expect(firstUsage.okCalls).toBe(1);
+      expect((await usage()).json()).toMatchObject(zero);
+    } finally {
+      await firstApp.close();
+    }
   });
 });
 

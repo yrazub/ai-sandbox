@@ -54,3 +54,18 @@ export type RunResponse = z.infer<typeof RunResponse>;
 
 export const ErrorResponse = z.object({ error: z.string() });
 export type ErrorResponse = z.infer<typeof ErrorResponse>;
+
+export const UsageResponse = z
+  .object({
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+    costUsd: z.number().nonnegative(),
+    okCalls: z.number().int().nonnegative(),
+    unpricedCalls: z.number().int().nonnegative(),
+    startedAt: z.iso.datetime(),
+  })
+  .refine((u) => u.unpricedCalls <= u.okCalls, {
+    message: 'unpricedCalls must not exceed okCalls',
+    path: ['unpricedCalls'],
+  });
+export type UsageResponse = z.infer<typeof UsageResponse>;

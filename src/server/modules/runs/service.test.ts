@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MockProvider } from '../../adapters/openrouter/mock-provider';
 import { ProviderError, ValidationError } from '../../platform/errors';
 import { createModelCatalog } from './model-catalog';
+import type { Completion } from './ports';
 import { createRunService } from './service';
 
 function setup(provider: MockProvider, timeoutMs?: number) {
@@ -115,5 +116,109 @@ describe('run service', () => {
     const provider = new MockProvider();
     await setup(provider).run({ prompt: 'hi', modelIds: ['mock/fast'] });
     expect(provider.calls[0]?.maxTokens).toBe(1024);
+  });
+});
+
+describe('run service usage', () => {
+  const zero = { inputTokens: 0, outputTokens: 0, costUsd: 0, okCalls: 0, unpricedCalls: 0 };
+
+  /** A provider whose calls stay open until the test releases them by model id. */
+  function deferredProvider() {
+    const releases = new Map<string, (completion: Completion) => void>();
+    const provider = new MockProvider({
+      respond: ({ modelId }) =>
+        new Promise<Completion>((resolve) => {
+          releases.set(modelId, resolve);
+        }),
+    });
+    return { provider, releases };
+  }
+
+  it('starts at zero, stamped with the time the service was created', () => {
+    const fixedNow = Date.UTC(2026, 10, 3, 14, 2, 0);
+    const provider = new MockProvider();
+    const service = createRunService({
+      provider,
+      catalog: createModelCatalog({ provider }),
+      now: () => fixedNow,
+    });
+    expect(service.usage()).toEqual({ ...zero, startedAt: new Date(fixedNow).toISOString() });
+  });
+
+  it('adds the ok results of a run', async () => {
+    const service = setup(new MockProvider());
+    await service.run({ prompt: 'hi', modelIds: ['mock/fast', 'mock/smart'] });
+    expect(service.usage()).toMatchObject({
+      inputTokens: 20,
+      outputTokens: 40,
+      costUsd: 0.0001 + 0.0001,
+      okCalls: 2,
+      unpricedCalls: 0,
+    });
+  });
+
+  it('adds nothing for a model that times out', async () => {
+    const provider = new MockProvider({
+      respond: ({ modelId }) =>
+        modelId === 'mock/fast'
+          ? new Promise(() => {})
+          : { output: 'fine', inputTokens: 3, outputTokens: 4, costUsd: 0.5 },
+    });
+    const service = setup(provider, 20);
+    await service.run({ prompt: 'hi', modelIds: ['mock/fast', 'mock/smart'] });
+    expect(service.usage()).toMatchObject({
+      inputTokens: 3,
+      outputTokens: 4,
+      costUsd: 0.5,
+      okCalls: 1,
+      unpricedCalls: 0,
+    });
+  });
+
+  it('adds nothing when the run is rejected for a model outside the list', async () => {
+    const service = setup(new MockProvider());
+    await expect(
+      service.run({ prompt: 'hi', modelIds: ['mock/fast', 'evil/model'] }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(service.usage()).toMatchObject(zero);
+  });
+
+  it('adds nothing when the model list is unavailable', async () => {
+    const service = setup(new MockProvider({ listError: new Error('down') }));
+    await expect(service.run({ prompt: 'hi', modelIds: ['mock/fast'] })).rejects.toThrow();
+    expect(service.usage()).toMatchObject(zero);
+  });
+
+  it('loses nothing when two runs overlap and finish in reverse order', async () => {
+    const { provider, releases } = deferredProvider();
+    const service = setup(provider);
+    const first = service.run({ prompt: 'a', modelIds: ['mock/fast'] });
+    const second = service.run({ prompt: 'b', modelIds: ['mock/smart'] });
+    await vi.waitFor(() => expect(provider.calls).toHaveLength(2));
+
+    releases.get('mock/smart')?.({ output: 'b', inputTokens: 100, outputTokens: 200, costUsd: 0.25 });
+    await second;
+    releases.get('mock/fast')?.({ output: 'a', inputTokens: 1, outputTokens: 2, costUsd: 0.5 });
+    await first;
+
+    expect(service.usage()).toMatchObject({
+      inputTokens: 101,
+      outputTokens: 202,
+      costUsd: 0.25 + 0.5,
+      okCalls: 2,
+      unpricedCalls: 0,
+    });
+  });
+
+  it('adds the results of a run whose promise the caller never awaits', async () => {
+    const { provider, releases } = deferredProvider();
+    const service = setup(provider);
+    void service.run({ prompt: 'hi', modelIds: ['mock/fast'] });
+    await vi.waitFor(() => expect(provider.calls).toHaveLength(1));
+    expect(service.usage().okCalls).toBe(0);
+
+    releases.get('mock/fast')?.({ output: 'x', inputTokens: 5, outputTokens: 6, costUsd: 0.5 });
+    await vi.waitFor(() => expect(service.usage().okCalls).toBe(1));
+    expect(service.usage()).toMatchObject({ inputTokens: 5, outputTokens: 6, costUsd: 0.5 });
   });
 });

@@ -40,7 +40,7 @@
 | `src/server/adapters/openrouter/openrouter-provider.ts` | Tokens accepted as any number, cost nullish (31-33, 119-121). Source of the F4/Q4 risk |
 | `src/server/modules/runs/routes.test.ts`, `service.test.ts`, `domain.test.ts` | Test style (`start()`, `app.inject`, `setup()`). No existing expectation changes in phase 1 |
 | `src/web/lib/api-client.ts` | The `call` helper turns network failure, error status and schema mismatch into thrown errors (9-29). `fetchModels` pattern (31-33) |
-| `src/web/lib/query-client.ts` | Global defaults `retry: false, refetchOnWindowFocus: false` (6). Unchanged |
+| `src/web/lib/query-client.ts` | Global defaults `retry: false, refetchOnWindowFocus: false` (6). These stay unchanged; phase 3 adds only the `focusManager.setEventListener` setup |
 | `src/web/hooks/use-models.ts`, `use-run-models.ts` | Query and mutation patterns (5; 10-15) |
 | `src/web/components/result-format.ts` | `formatCost`, reused for AC-12 (6-11) |
 | `src/web/App.tsx` | Returns a single `<main>` (39-107). The footer goes after it |
@@ -264,9 +264,10 @@ This phase keeps the footer current: the usage query is invalidated when a run s
   - **AC-20 / Q3:**
     - First load OK. A run settles and the refetch answers 500, so the footer shows "Session usage unavailable". A second run settles with the refetch held pending, and the footer still shows "Session usage unavailable". When that refetch resolves OK, the totals show.
     - Separately, the first load fails, then a window `focus` triggers a held refetch, and the footer stays "Session usage unavailable".
-  - **AC-23:** with one seeded history entry (`localStorage.setItem(HISTORY_KEY, …)` as in `App.history.test.tsx:78-89`), restoring it, deleting it, and "Clear history" then "Clear" leave the usage count unchanged.
-  - **AC-34:** `act(() => window.dispatchEvent(new Event('focus')))` raises the usage count by 1 and leaves the `/api/models` count unchanged. `document.dispatchEvent(new Event('visibilitychange'))` also raises it by 1. Dispatching `focus` and `visibilitychange` together while the usage request is held raises it by exactly 1. Calling `screen.getByLabelText('Prompt').focus()` raises it by 0.
+  - **AC-23:** with two seeded history entries (`localStorage.setItem(HISTORY_KEY, …)` as in `App.history.test.tsx:78-89`; two are needed because "Clear history" is only rendered while entries remain, `src/web/components/HistorySection.tsx:24`), restoring the first, deleting the first, and "Clear history" then "Clear" leave the usage count unchanged.
+  - **AC-34:** `act(() => window.dispatchEvent(new Event('focus')))` raises the usage count by 1 and leaves the `/api/models` count unchanged. `document.dispatchEvent(new Event('visibilitychange', { bubbles: true }))` also raises it by 1 (browsers fire `visibilitychange` at `document` with `bubbles: true`, so it reaches the `window` listener in `src/web/lib/query-client.ts`). Dispatching `window` `focus` and that bubbling `visibilitychange` together while the usage request is held raises it by exactly 1. Calling `screen.getByLabelText('Prompt').focus()` raises it by 0.
   - **Regression guard (base AC-2, Run button):** after a 200 run whose usage refetch is held pending, the Run button becomes enabled again, which shows that `onSettled` does not hold the mutation.
+- Add `src/web/lib/query-client.test.ts` (node environment). Case: **AC-34 / R-WEB-20:** `createQueryClient().getDefaultOptions()` equals `{ queries: { retry: false, refetchOnWindowFocus: false } }`, which pins the global defaults while `listenToWindowFocus` is added.
 - Expected to change: none. `App.history.test.tsx` takes its counts after mount and does not count across a settled run, and its stub's thrown `/api/usage` error only puts the footer in its unavailable state. `App.test.tsx` answers `/api/usage` from phase 2.
 
 **Verify (code):** `source ~/.nvm/nvm.sh && nvm use` · `npm run typecheck` · `npm test`

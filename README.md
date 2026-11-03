@@ -3,10 +3,10 @@
 Enter one prompt, pick several models from [OpenRouter](https://openrouter.ai), run them in
 parallel and compare the answers side by side: text, time, tokens and cost.
 
-It is a local, single-user tool. The server listens on `127.0.0.1` only, stores nothing on disk;
-keeps an in-memory usage tally reset on restart and has no login. The page keeps a history of past runs (prompt, models and results) in the browser's
-`localStorage`, so it survives a reload. History is stored unencrypted in the browser profile and
-can be cleared from the page.
+It is a local, single-user tool. The server listens on `127.0.0.1` only, stores nothing on disk,
+keeps an in-memory usage tally that resets on restart, and has no login. The page keeps a history
+of past runs (prompt, models and results) in the browser's `localStorage`, so it survives a reload.
+History is stored unencrypted in the browser profile and can be cleared from the page.
 
 ## Setup
 
@@ -87,8 +87,11 @@ that touches `localStorage`), [`src/web/hooks/use-history.ts`](src/web/hooks/use
 
 ## Session usage
 
-The footer below the History section shows the input and output tokens and the cost of every
-successful model call since the server started.
+The footer below the History section shows the total tokens (input plus output) and the cost of
+every successful model call since the server started, for example
+"Session since 14:02: 12,400 tokens · $0.0040". The time is when the server started, in your
+locale, and the cost follows the same rule as the result cards. `GET /api/usage` returns the input
+and output tokens separately, with the cost, the call counts and the start time.
 
 - **One tally for all clients.** Every tab and client feeds the same tally, which lives in the
   server's memory.
@@ -97,8 +100,10 @@ successful model call since the server started.
 - **Successful results only.** The tally counts usage reported for successful results, so it can
   be lower than the OpenRouter bill: a failed or timed-out call may still be billed.
 - **Calls without cost.** A successful call that reports no cost adds its tokens and is counted as
-  one of the "calls without cost".
-- **Refresh.** The footer refreshes when a run settles and when the window regains focus.
+  one of the "calls without cost", and the footer appends "(N calls without cost)" after the cost.
+- **Refresh.** The footer refreshes when a run settles, whether it succeeds or fails, and when the
+  window regains focus. A run from another tab or client shows up at the next refresh. If the
+  request fails, the footer reads "Session usage unavailable" until a later refresh succeeds.
 
 The code is in [`src/web/components/SessionFooter.tsx`](src/web/components/SessionFooter.tsx),
 [`src/web/hooks/use-usage.ts`](src/web/hooks/use-usage.ts) and `GET /api/usage` in

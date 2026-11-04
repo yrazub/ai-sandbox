@@ -6,13 +6,15 @@ module, no database, no login.
 
 ## Node
 
-The project needs **Node 26**, pinned in `.nvmrc` and `engines`. nvm does not switch by itself, so
-in every new shell run this first:
+The project needs **Node 26**, pinned in `.nvmrc` and `engines`. Check the version first:
 
 ```
-source ~/.nvm/nvm.sh && nvm use
-node -v    # must print v26.x
+node -v    # v26.x → run npm directly, no nvm needed
 ```
+
+Only if it prints another version, switch with `source ~/.nvm/nvm.sh && nvm use` (nvm does not
+switch by itself). Do not put it in front of every command: a session that cannot approve shell
+commands refuses `source`.
 
 ## Commands
 
